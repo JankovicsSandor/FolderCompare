@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FolderCompare
 {
@@ -9,70 +11,43 @@ namespace FolderCompare
     {
         static void Main(string[] args)
         {
-            // Create two identical or different temporary folders   
-            // on a local drive and change these file paths.  
-            Console.WriteLine("Please give me the original folder path");
-            string pathA = Console.ReadLine();
 
-            Console.WriteLine("Please give me the new folder path");
-            string pathB =Console.ReadLine();
+            StreamReader reader = File.OpenText("compare.txt");
+            string line;
+            string path = @"./outPut/";
+            List<Task> tasks = new List<Task>();
+            CancellationTokenSource cts = new CancellationTokenSource();
 
-            DirectoryInfo dir1 = new DirectoryInfo(pathA);
-            DirectoryInfo dir2 = new DirectoryInfo(pathB);
+            List<CompareSetting> settings = new List<CompareSetting>();
 
-            // Take a snapshot of the file system.  
-            IEnumerable<FileInfo> list1 = dir1.GetFiles("*.*", SearchOption.AllDirectories);
-            IEnumerable<FileInfo> list2 = dir2.GetFiles("*.*", SearchOption.AllDirectories);
-
-            //A custom file comparer defined below  
-            FileCompare myFileCompare = new FileCompare();
-
-            // This query determines whether the two folders contain  
-            // identical file lists, based on the custom file comparer  
-            // that is defined in the FileCompare class.  
-            // The query executes immediately because it returns a bool.  
-            bool areIdentical = list1.SequenceEqual(list2, myFileCompare);
-
-            if (areIdentical == true)
+            while ((line = reader.ReadLine()) != null)
             {
-                Console.WriteLine("the two folders are the same");
-            }
-            else
-            {
-                Console.WriteLine("The two folders are not the same");
+                string[] items = line.Split(',');
+                settings.Add(new CompareSetting() { Type = items[0], FromBuild = items[1], ToBuild = items[2] });
             }
 
-            // Find the common files. It produces a sequence and doesn't   
-            // execute until the foreach statement.  
-            var queryCommonFiles = list1.Intersect(list2, myFileCompare);
-
-            if (queryCommonFiles.Count() > 0)
+            if (Directory.Exists(path))
             {
-                Console.WriteLine("The following files are in both folders:");
-                foreach (var v in queryCommonFiles)
+                Directory.Delete(path, true);
+            }
+            Directory.CreateDirectory(path);
+
+            Console.WriteLine($"Start {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}");
+            foreach (CompareSetting item in settings)
+            {
+                Task t = Task.Run(() => CompareTask.OneMeasure(item, cts.Token)).ContinueWith(resItem =>
                 {
-                    Console.WriteLine(v.FullName); //shows which items end up in result list  
-                }
+                    Console.WriteLine($"Done comparing {resItem.Result.Type}-{resItem.Result.FromBuild}-{resItem.Result.ToBuild}- {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}");
+                });
+                tasks.Add(t);
             }
-            else
+
+            Task.WhenAll(tasks).ContinueWith(prevTask =>
             {
-                Console.WriteLine("There are no common files in the two folders.");
-            }
-
-            // Find the set difference between the two folders.  
-            // For this example we only check one way.  
-            var queryList1Only = (from file in list1
-                                  select file).Except(list2, myFileCompare);
-
-            Console.WriteLine("The following files are in list1 but not list2:");
-            foreach (var v in queryList1Only)
-            {
-                Console.WriteLine(v.FullName);
-            }
-
-            // Keep the console window open in debug mode.  
-            Console.WriteLine("Press any key to exit.");
-            Console.ReadKey();
+                Console.WriteLine($"Finished {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}");
+            }, TaskContinuationOptions.OnlyOnRanToCompletion);
+            Console.ReadLine();
+            cts.Cancel();
         }
     }
 }
